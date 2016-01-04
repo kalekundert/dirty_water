@@ -94,16 +94,17 @@ class Reaction:
 
         # Print the table
         
+        rule = '─'
         return '\n'.join([
             row_template.format(*column_titles),
-            '  '.join('=' * w for w in column_widths)
+            '  '.join(rule * w for w in column_widths)
         ] + [
             row_template.format(
                 *[getter(reagent) for getter in column_getters])
             for reagent in self
         ] + [
             '  '.join(
-                ' ' * w if i < 2 else '=' * w
+                ' ' * w if i < 2 else rule * w
                 for i, w in enumerate(column_widths)),
             row_template.format('', '',
                 self.volume_str, self['master mix'].scaled_volume_str),
