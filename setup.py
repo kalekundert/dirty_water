@@ -18,7 +18,7 @@ setup(
     name='dirty_water',
     version=version,
     author='Kale Kundert',
-    author_email='kale@thekunderts.net',
+    author_email='kale.kundert@ucsf.edu',
     description='',
     long_description=readme,
     url='https://github.com/kalekundert/dirty_water',
