@@ -9,6 +9,9 @@ class Reaction:
         self.reagents = collections.OrderedDict()
         self._num_reactions = 1
         self._extra_master_mix = 10
+        self.show_each_rxn = True
+        self.show_master_mix = True
+        self.show_totals = True
 
         if std_reagents:
             self.load_std_reagents(std_reagents)
@@ -58,6 +61,12 @@ class Reaction:
     def volume(self):
         return sum(x.std_volume for x in self)
 
+    @volume.setter
+    def volume(self, volume):
+        ratio = volume / self.volume
+        for reagent in self:
+            reagent.std_volume *= ratio
+
     @property
     def volume_unit(self):
         return next(iter(self)).volume_unit
@@ -68,23 +77,43 @@ class Reaction:
 
     @property
     def reagent_table(self):
+
+        def cols(*cols):
+            """
+            Eliminate columns the user doesn't want to see.
+            """
+            cols = list(cols)
+            if not self.show_master_mix:
+                del cols[3]
+            if not self.show_each_rxn:
+                del cols[2]
+            return cols
+
         # Figure out how big the table should be.
 
-        column_titles = [
+        column_titles = cols(
                 "Reagent",
                 "Conc",
                 "Each Rxn",
                 "Master Mix",
-        ]
-        column_getters = [
+        )
+        column_footers = cols(
+                '',
+                '',
+                self.volume_str,
+                self['master mix'].scaled_volume_str,
+        )
+        column_getters = cols(
                 lambda x: x.name,
                 lambda x: x.stock_conc_str,
                 lambda x: x.volume_str,
                 lambda x: x.scaled_volume_str,
-        ]
+        )
         column_widths = [
-                max(map(len, [title] + [getter(x) for x in self]))
-                for title, getter in zip(column_titles, column_getters)
+                max(map(len,
+                    [title, footer] + [getter(x) for x in self]))
+                for title, footer,getter in 
+                    zip(column_titles, column_footers, column_getters)
         ]
         column_alignments = '<>>>'
         row_template = '  '.join(
@@ -94,21 +123,21 @@ class Reaction:
 
         # Print the table
         
-        rule = '─'
-        return '\n'.join([
+        rule = '─' * (sum(column_widths) + 2 * len(column_widths) - 2)
+        rows = [
             row_template.format(*column_titles),
-            '  '.join(rule * w for w in column_widths)
+            rule,
         ] + [
             row_template.format(
                 *[getter(reagent) for getter in column_getters])
             for reagent in self
-        ] + [
-            '  '.join(
-                ' ' * w if i < 2 else rule * w
-                for i, w in enumerate(column_widths)),
-            row_template.format('', '',
-                self.volume_str, self['master mix'].scaled_volume_str),
-        ])
+        ]
+        if self.show_totals and (self.show_each_rxn or self.show_master_mix):
+            rows += [
+                rule,
+                row_template.format(*column_footers),
+            ]
+        return '\n'.join(rows)
 
     def load_std_reagents(self, std_reagents):
         lines = std_reagents.strip().split('\n')
@@ -187,7 +216,7 @@ class Reagent:
         if isinstance(volume, tuple):
             self._std_volume, self.volume_unit = volume
         else:
-            self._std_volume = volume
+            self._std_volume = float(volume)
 
     @property
     def stock_conc(self):
@@ -234,12 +263,12 @@ class Reagent:
 
     @property
     def scaled_volume_str(self):
-        if self.master_mix:
+        if not self.master_mix:
+            return ''
+        else:
             return '{} {}'.format(
                     round_to_pipet(self.volume * self.reaction.scale),
                     self.volume_unit)
-        else:
-            return '--- ' + ' ' * len(self.volume_unit)
 
 
 class Water (Reagent):
