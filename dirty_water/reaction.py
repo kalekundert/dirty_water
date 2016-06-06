@@ -24,7 +24,7 @@ class Reaction:
             return MasterMix(self)
 
         if name not in self.reagents:
-            if name == 'water':
+            if name.lower() == 'water':
                 self.reagents[name] = Water(self, name)
             else:
                 self.reagents[name] = Reagent(self, name)
@@ -101,7 +101,7 @@ class Reaction:
                 '',
                 '',
                 self.volume_str,
-                self['master mix'].scaled_volume_str,
+                self['master mix'].volume_str,
         )
         column_getters = cols(
                 lambda x: x.name,
@@ -137,7 +137,7 @@ class Reaction:
                 rule,
                 row_template.format(*column_footers),
             ]
-        return '\n'.join(rows)
+        return '\n'.join(rows) + '/rxn'
 
     def load_std_reagents(self, std_reagents):
         lines = std_reagents.strip().split('\n')
