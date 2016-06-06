@@ -3,4 +3,4 @@
 __version__ = '0.0.0'
 
 from .reaction import Reaction
-from .protocol import Protocol
+from .protocols import Protocol, Pcr
