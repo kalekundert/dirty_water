@@ -1,6 +1,5 @@
 language: python
 python:
-  - "3.2"
   - "3.3"
   - "3.4"
   - "3.5"
@@ -9,6 +8,7 @@ install:
     - pip install python-coveralls pytest-cov
     - pip install .
 script: 
-    - py.test tests --cov dirty_water
+    - cd tests
+    - py.test . --cov dirty_water
 after_success:
     - coveralls
