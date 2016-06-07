@@ -27,6 +27,7 @@ setup(
     ],
     include_package_data=True,
     install_requires=[
+        'nonstdlib',
     ],
     license='MIT',
     zip_safe=False,
