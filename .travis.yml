@@ -6,13 +6,9 @@ python:
   - "3.5"
   - "nightly"
 install:
-  - pip install .
+    - pip install python-coveralls pytest-cov
+    - pip install .
 script: 
-  - py.test tests
-deploy:
-    provider: pypi
-    user: kalekundert
-    on:
-        tags: true
-
-
+    - py.test tests --cov {{ cookiecutter.project_slug }}
+after_success:
+    - coveralls
