@@ -10,7 +10,7 @@ class Reaction:
         self._num_reactions = 1
         self._extra_master_mix = 10
         self.show_each_rxn = True
-        self.show_master_mix = True
+        self._show_master_mix = None
         self.show_totals = True
 
         if std_reagents:
@@ -19,23 +19,30 @@ class Reaction:
     def __repr__(self):
         return 'Reaction()'
 
+    def __str__(self):
+        return self.reagent_table
+
+    def __iter__(self):
+        yield from self.reagents.values()
+
+    def __contains__(self, name):
+        return name in self.reagents
+
     def __getitem__(self, name):
         if name == 'master mix':
             return MasterMix(self)
 
         if name not in self.reagents:
-            if name.lower() == 'water':
+            if 'water' in name.lower():
                 self.reagents[name] = Water(self, name)
             else:
                 self.reagents[name] = Reagent(self, name)
 
         return self.reagents[name]
 
-    def __iter__(self):
-        yield from self.reagents.values()
-
-    def __str__(self):
-        return self.reagent_table
+    def __delitem__(self, name):
+        if name in self.reagents:
+            del self.reagents[reagent]
 
     @property
     def num_reactions(self):
@@ -52,6 +59,17 @@ class Reaction:
     @extra_master_mix.setter
     def extra_master_mix(self, percent):
         self._extra_master_mix = float(percent)
+
+    @property
+    def show_master_mix(self):
+        if self._show_master_mix is None:
+            return self.num_reactions > 1
+        else:
+            return self._show_master_mix
+
+    @show_master_mix.setter
+    def show_master_mix(self, show):
+        self._show_master_mix = show
 
     @property
     def scale(self):
@@ -83,7 +101,7 @@ class Reaction:
             Eliminate columns the user doesn't want to see.
             """
             cols = list(cols)
-            if not self.show_master_mix:
+            if not any(x.master_mix for x in self) or not self.show_master_mix:
                 del cols[3]
             if not self.show_each_rxn:
                 del cols[2]
@@ -137,7 +155,7 @@ class Reaction:
                 rule,
                 row_template.format(*column_footers),
             ]
-        return '\n'.join(rows) + '/rxn'
+        return '\n'.join(rows) + ('/rxn' if self.show_master_mix else '')
 
     def load_std_reagents(self, std_reagents):
         lines = std_reagents.strip().split('\n')
@@ -256,6 +274,7 @@ class Reagent:
             return self.std_volume
         else:
             return self.reaction.volume * self.conc / self.stock_conc
+        return self.reaction.volume * self.conc / self.stock_conc
 
     @property
     def volume_str(self):
