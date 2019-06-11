@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 
+from nonstdlib import plural
+
 class Protocol:
+    """
+    Typical usage:
+
+    >>> p = dirty_water.Protocol()
+    >>> p += "First step..."
+    >>> p += "Second step..."
+    >>> print(p)
+    """
 
     def __init__(self):
         self.steps = []
+        self.notes = ""
 
     def __iter__(self):
         yield from self.steps
@@ -34,27 +45,81 @@ class Protocol:
 
 class Pcr(Protocol):
 
-    def __init__(self, num_reactions=1, ta=60, tx=120, nc=35):
+    thermocycler_protocols = {
+            # This needs to be in a config file somewhere...
+            'q5': {
+                'initial_denature_temp': 98,
+                'initial_denature_time': 30,
+                'denature_temp': 98,
+                'denature_time': 10,
+                'anneal_temp': 60,
+                'anneal_time': 20,
+                'extend_temp': 72,
+                'extend_time': 120,
+                'final_extend_temp': 72,
+                'final_extend_time': 120,
+                'num_cycles': 35,
+                'hold': 4,
+            },
+            'ssoadv': {
+                'initial_denature_temp': 95,
+                'initial_denature_time': 30,
+                'denature_temp': 95,
+                'denature_time': 10,
+                'anneal_temp': 60,
+                'anneal_time': 15,
+                'melt_curve_low_temp': 65,
+                'melt_curve_high_temp': 95,
+                'melt_curve_temp_step': 0.5,
+                'melt_curve_time_step': 5,
+                'num_cycles': 40,
+                'two_step': True,
+            },
+    }
+    thermocycler_aliases = {
+            'ta': 'annealing_temp',
+            'tx': 'extension_time',
+            'nc': 'num_cycles',
+    }
+    polymerase_reagents = {
+            'q5': {
+                'name': 'Q5 master mix',
+                'std_volume': (25, 'µL'),
+                'std_stock_conc': '2x',
+            },
+            'ssoadv': {
+                'name': 'SsoAdvanced mix',
+                'std_volume': (25, 'µL'),
+                'std_stock_conc': '2x',
+            },
+    }
+
+    def __init__(self, polymerase='q5', num_reactions=1, **thermocycler_kwargs):
         from .reaction import Reaction
         self.reaction = Reaction()
         self.primer_mix = Reaction()
+        self.thermocycler_protocol = self.thermocycler_protocols[polymerase]
         self.num_reactions = num_reactions
         self.make_primer_mix = False
         self.extra_master_mix = 0
-        self.annealing_temp = ta
-        self.extension_time = tx
-        self.num_cycles = nc
 
-        self.primer_mix['water'].std_volume = 38, 'μL'
+        self.thermocycler_protocol.update({
+                thermocycler_aliases.get(k, k): v
+                for k, v in thermocycler_kwargs.items()
+        })
+
+        self.primer_mix['water'].std_volume = 36, 'μL'
         self.primer_mix.show_master_mix = False
 
-        self.primer_mix['forward primer'].std_volume = 1, 'μL'
-        self.primer_mix['forward primer'].std_stock_conc = 200, 'μM'
+        self.primer_mix['forward primer'].std_volume = 2, 'μL'
+        self.primer_mix['forward primer'].std_stock_conc = 100, 'μM'
 
-        self.primer_mix['reverse primer'].std_volume = 1, 'μL'
-        self.primer_mix['reverse primer'].std_stock_conc = 200, 'μM'
+        self.primer_mix['reverse primer'].std_volume = 2, 'μL'
+        self.primer_mix['reverse primer'].std_stock_conc = 100, 'μM'
 
-        self.reaction['water'].std_volume = 19, 'μL'
+        polymerase_reagent = self.polymerase_reagents[polymerase]
+
+        self.reaction['water'].std_volume = 44 - polymerase_reagent['std_volume'][0], 'μL'
         self.reaction['water'].master_mix = True
 
         self.reaction['primer mix'].std_volume = 5, 'μL'
@@ -65,41 +130,70 @@ class Pcr(Protocol):
         self.reaction['template DNA'].std_stock_conc = 100, 'pg/μL'
         self.reaction['template DNA'].master_mix = True
 
-        self.reaction['Q5 master mix'].std_volume = 25, 'μL'
-        self.reaction['Q5 master mix'].std_stock_conc = '2x'
-        self.reaction['Q5 master mix'].master_mix = True
+        self.reaction[polymerase_reagent['name']].std_volume = polymerase_reagent['std_volume']
+        self.reaction[polymerase_reagent['name']].std_stock_conc = polymerase_reagent['std_stock_conc']
+        self.reaction[polymerase_reagent['name']].master_mix = True
 
     def __getitem__(self, key):
         return self.reaction[key]
 
     @property
     def steps(self):
-        s = 's' if self.num_reactions != 1 else ''
-        ta = self.annealing_temp
-        tx = self.extension_time
-        tx = '{}:{:02d}'.format(tx // 60, tx % 60)
-        pad = ' ' * (7 - len(tx))
-        nc = self.num_cycles
-
-        from .reaction import Reaction
-
-        primer_step = """\
+        primer_step = f"""\
 Prepare each 10x primer mix:
 
-{}""".format(self.primer_mix)
+{self.primer_mix}"""
 
-        setup_step = """\
-Setup {self.num_reactions} PCR reaction{s} and 1 negative control:
+        setup_step = f"""\
+Setup {self.num_reactions} PCR {plural(self.num_reactions):reaction/s} and 1 negative control:
 
-{self.reaction}""".format(**locals())
+{self.reaction}"""
 
-        thermocycler_step = """\
+        def time(x):
+            if x < 60:
+                return f'{x}s'
+            elif x % 60:
+                return f'{x//60}m{x%60:02}'
+            else:
+                return f'{x//60} min'
+
+        def has_step(protocol, step, params=['temp', 'time']):
+            return all((f'{step}_{param}' in protocol) for param in params)
+
+        p = self.thermocycler_protocol
+        three_step = not p.get('two_step', False) and has_step(p, 'extend')
+
+        thermocycler_steps = [
+                f"- {p['initial_denature_temp']}°C for {time(p['initial_denature_time'])}",
+                f"- Repeat {p['num_cycles']}x:",
+                f"  - {p['denature_temp']}°C for {time(p['denature_time'])}",
+                f"  - {p['anneal_temp']}°C for {time(p['anneal_time'])}",
+        ]
+        if three_step:
+            thermocycler_steps += [
+                f"  - {p['extend_temp']}°C for {time(p['extend_time'])}",
+            ]
+
+        if has_step(p, 'final_extend'):
+            thermocycler_steps += [
+                f"- {p['final_extend_temp']}°C for {time(p['final_extend_time'])}",
+            ]
+
+        if has_step(p, 'melt_curve', 'low_temp high_temp temp_step time_step'.split()):
+            thermocycler_steps += [
+                f"- {p['melt_curve_low_temp']}-{p['melt_curve_high_temp']}°C in {time(p['melt_curve_time_step'])} steps of {p['melt_curve_temp_step']}°C",
+            ]
+
+        if 'hold' in p:
+            thermocycler_steps += [
+                f"- {p['hold']}°C hold",
+            ]
+
+        br = '\n'
+        thermocycler_step = f"""\
 Run the following thermocycler protocol:
 
-98°C → 98°C → {ta}°C → 72°C → 72°C → 12°C
-0:30   0:10   0:20   {tx}{pad}2:00    ∞
-      └──────────────────┘
-               {nc}x""".format(**locals())
+{br.join(thermocycler_steps)}"""
 
         if self.make_primer_mix:
             return primer_step, setup_step, thermocycler_step
@@ -113,6 +207,30 @@ Run the following thermocycler protocol:
     @num_reactions.setter
     def num_reactions(self, value):
         self.reaction.num_reactions = value + 1
+
+    @property
+    def annealing_temp(self):
+        return self.thermocycler_protocol['anneal_temp']
+
+    @annealing_temp.setter
+    def annealing_temp(self, value):
+        self.thermocycler_protocol['anneal_temp'] = value
+
+    @property
+    def extension_time(self):
+        return self.thermocycler_protocol['extend_time']
+
+    @extension_time.setter
+    def extension_time(self, value):
+        self.thermocycler_protocol['extend_time'] = value
+
+    @property
+    def num_cycles(self):
+        return self.thermocycler_protocol['extend_time']
+
+    @num_cycles.setter
+    def num_cycles(self, value):
+        self.thermocycler_protocol['num_cycles'] = value
 
     @property
     def extra_master_mix(self):
