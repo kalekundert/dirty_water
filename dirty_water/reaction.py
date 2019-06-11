@@ -148,14 +148,14 @@ class Reaction:
         ] + [
             row_template.format(
                 *[getter(reagent) for getter in column_getters])
-            for reagent in self
+            for reagent in self if reagent.volume
         ]
         if self.show_totals and (self.show_each_rxn or self.show_master_mix):
             rows += [
                 rule,
                 row_template.format(*column_footers),
             ]
-        return '\n'.join(rows) + ('/rxn' if self.show_master_mix else '')
+        return '\n'.join(rows) + ('/rxn' if self.show_master_mix and self.show_totals else '')
 
     def load_std_reagents(self, std_reagents):
         lines = std_reagents.strip().split('\n')
@@ -270,7 +270,10 @@ class Reagent:
         # It isn't possible to calculate std_conc for reagents for which 
         # std_stock_conc is a string (i.e. '10x') or left undefined (i.e.  
         # water).  So don't calculate a new volume if std_volume will do.
-        if self._conc is None:
+        try: conc = self.std_conc
+        except: conc = self._conc
+
+        if conc is None:
             return self.std_volume
         else:
             return self.reaction.volume * self.conc / self.stock_conc
