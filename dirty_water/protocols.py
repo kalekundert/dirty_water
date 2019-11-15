@@ -76,6 +76,18 @@ class Pcr(Protocol):
                 'two_step': True,
             },
     }
+    template_params = {
+            'q5': {
+                'std_volume': (1, 'µL'),
+                'std_stock_conc': (100, 'pg/µL'),
+                'master_mix': True,
+            },
+            'ssoadv': {
+                'std_volume': (5, 'µL'),
+                'std_stock_conc': (100, 'pg/µL'),
+                'master_mix': True,
+            },
+    }
     thermocycler_aliases = {
             'ta': 'annealing_temp',
             'tx': 'extension_time',
@@ -94,7 +106,14 @@ class Pcr(Protocol):
             },
     }
 
-    def __init__(self, polymerase='q5', num_reactions=1, **thermocycler_kwargs):
+    def __init__(self,
+            template='template DNA',
+            fwd_primer='forward primer', 
+            rev_primer='reverse primer',
+            polymerase='q5',
+            num_reactions=1, 
+            **thermocycler_kwargs):
+
         from .reaction import Reaction
         self.reaction = Reaction()
         self.primer_mix = Reaction()
@@ -103,32 +122,41 @@ class Pcr(Protocol):
         self.make_primer_mix = False
         self.extra_master_mix = 0
 
+        self._template_name = template
+        self._fwd_primer_name = fwd_primer
+        self._rev_primer_name = rev_primer
+
         self.thermocycler_protocol.update({
                 thermocycler_aliases.get(k, k): v
                 for k, v in thermocycler_kwargs.items()
         })
 
-        self.primer_mix['water'].std_volume = 36, 'μL'
+        self.primer_mix['water'].std_volume = 18, 'μL'
         self.primer_mix.show_master_mix = False
 
-        self.primer_mix['forward primer'].std_volume = 2, 'μL'
-        self.primer_mix['forward primer'].std_stock_conc = 100, 'μM'
+        self.primer_mix[fwd_primer].std_volume = 1, 'μL'
+        self.primer_mix[fwd_primer].std_stock_conc = 100, 'μM'
 
-        self.primer_mix['reverse primer'].std_volume = 2, 'μL'
-        self.primer_mix['reverse primer'].std_stock_conc = 100, 'μM'
+        self.primer_mix[rev_primer].std_volume = 1, 'μL'
+        self.primer_mix[rev_primer].std_stock_conc = 100, 'μM'
 
         polymerase_reagent = self.polymerase_reagents[polymerase]
+        template_params = self.template_params[polymerase]
 
-        self.reaction['water'].std_volume = 44 - polymerase_reagent['std_volume'][0], 'μL'
+        self.reaction['water'].std_volume = (
+                45
+                - polymerase_reagent['std_volume'][0]
+                - template_params['std_volume'][0]
+        ), 'μL'
         self.reaction['water'].master_mix = True
 
         self.reaction['primer mix'].std_volume = 5, 'μL'
         self.reaction['primer mix'].std_stock_conc = '10x'
         self.reaction['primer mix'].master_mix = False
 
-        self.reaction['template DNA'].std_volume = 1, 'μL'
-        self.reaction['template DNA'].std_stock_conc = 100, 'pg/μL'
-        self.reaction['template DNA'].master_mix = True
+        self.reaction[template].std_volume = template_params['std_volume']
+        self.reaction[template].std_stock_conc = template_params.get('std_stock_conc', None)
+        self.reaction[template].master_mix = template_params.get('master_mix', True)
 
         self.reaction[polymerase_reagent['name']].std_volume = polymerase_reagent['std_volume']
         self.reaction[polymerase_reagent['name']].std_stock_conc = polymerase_reagent['std_stock_conc']
@@ -150,6 +178,8 @@ Setup {self.num_reactions} PCR {plural(self.num_reactions):reaction/s} and 1 neg
 {self.reaction}"""
 
         def time(x):
+            if isinstance(x, str):
+                return x
             if x < 60:
                 return f'{x}s'
             elif x % 60:
@@ -209,6 +239,14 @@ Run the following thermocycler protocol:
         self.reaction.num_reactions = value + 1
 
     @property
+    def extra_master_mix(self):
+        return self.reaction.extra_master_mix
+
+    @num_reactions.setter
+    def extra_master_mix(self, value):
+        self.reaction.extra_master_mix = value
+
+    @property
     def annealing_temp(self):
         return self.thermocycler_protocol['anneal_temp']
 
@@ -242,11 +280,11 @@ Run the following thermocycler protocol:
 
     @property
     def template_in_master_mix(self):
-        return self.reaction['template DNA'].master_mix
+        return self.reaction[self._template_name].master_mix
 
     @template_in_master_mix.setter
     def template_in_master_mix(self, value):
-        self.reaction['template DNA'].master_mix = value
+        self.reaction[self._template_name].master_mix = value
 
     @property
     def primers_in_master_mix(self):

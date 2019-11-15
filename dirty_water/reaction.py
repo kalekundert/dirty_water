@@ -93,6 +93,13 @@ class Reaction:
     def volume_str(self):
         return '{} {}'.format(round_to_pipet(self.volume), self.volume_unit)
 
+    def rename_reagent(self, old_name, new_name):
+        reagent = self.reagents[old_name]
+        reagent.name = new_name
+
+        del self.reagents[old_name]
+        self.reagents[new_name] = reagent
+
     @property
     def reagent_table(self):
 
